@@ -21,15 +21,16 @@ using EnhancedStreamChat.Images;
 using StreamCore.YouTube;
 using StreamCore.Twitch;
 using System.Text;
+using StreamCore.Chat.Mixer;
 
 namespace EnhancedStreamChat
 {
-    public class ChatHandler : MonoBehaviour, ITwitchIntegration, IYouTubeIntegration
+    public class ChatHandler : MonoBehaviour, ITwitchIntegration, IYouTubeIntegration, IMixerIntegration
     {
         public static ChatHandler Instance = null;
         public static ConcurrentQueue<ChatMessage> RenderQueue = new ConcurrentQueue<ChatMessage>();
         public static Func<TwitchMessage, bool> ChatMessageFilters;
-        
+
         public Image lockButtonImage;
         public Image background;
         public GameObject lockButtonPrimitive;
@@ -93,7 +94,7 @@ namespace EnhancedStreamChat
                 Plugin.Log("Failed to get VRPointer!");
                 return;
             }
-            
+
             var _vrPointer = to.name != "GameCore" ? vrPointers.First() : vrPointers.Last();
             if (_movePointer)
                 Destroy(_movePointer);
@@ -249,6 +250,15 @@ namespace EnhancedStreamChat
 
         private void RegisterMessageHandlers()
         {
+            MixerClient.OnConnected += () =>
+            {
+                RenderQueue.Enqueue(new ChatMessage("Connected to Mixer chat...", new GenericChatMessage()));
+            };
+
+            MixerMessageHandlers.Message += (message) =>
+            {
+                MessageParser.Parse(new ChatMessage(Utilities.EscapeHTML(message.message), message));
+            };
 
             YouTubeMessageHandlers.OnInitialize += () =>
             {
@@ -457,7 +467,6 @@ namespace EnhancedStreamChat
         }
 
         private static readonly Regex _htmlTagRegex = new Regex(@"<(?<Tag>[a-z]+)=?(?<Value>[^>=]+)?>", RegexOptions.Compiled | RegexOptions.Multiline);
-
         private IEnumerator AddNewChatMessage(string origMsg, ChatMessage messageInfo)
         {
             _messageRendering = true;
@@ -483,11 +492,11 @@ namespace EnhancedStreamChat
                     continue;
                 }
 
-                if(openTags.Count > 0)
+                if (openTags.Count > 0)
                 {
-                    foreach(var tag in openTags.ToArray())
+                    foreach (var tag in openTags.ToArray())
                     {
-                        msg = msg.Insert(0, $"<{tag.Key}{(tag.Value != null? $"={tag.Value}" : "")}>");
+                        msg = msg.Insert(0, $"<{tag.Key}{(tag.Value != null ? $"={tag.Value}" : "")}>");
                         var closingTag = $"</{tag.Key}>";
                         if (msg.Contains(closingTag))
                         {
@@ -662,7 +671,7 @@ namespace EnhancedStreamChat
                 return;
             else if (id != "!FULLCLEAR!" && !ChatConfig.Instance.ClearTimedOutMessages)
                 return;
-            
+
             bool purged = false;
             foreach (CustomText currentMessage in _chatMessages)
             {
